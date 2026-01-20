@@ -1,0 +1,18 @@
+version: 1
+
+commands:
+  lint: ["ruff", "check", "."]
+  test: ["pytest", "-q"]
+  # Optional; not used in the workflow by default
+  format: ["ruff", "format", "."]
+
+context:
+  max_file_bytes: 6000
+  max_files_to_inspect: 8
+  # Simple heuristics markers; extend per-repo
+  language_markers:
+    python:
+      - "def "
+      - "class "
+      - "import "
+

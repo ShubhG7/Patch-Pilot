@@ -1,0 +1,17 @@
+version: 1
+
+guardrails:
+  allowed_paths:
+    - "src/**"
+    - "tests/**"
+    - "pyproject.toml"
+  blocked_paths:
+    - ".github/**"
+    - "**/.env*"
+    - "keys/**"
+    - "infra/**"
+
+  max_files_changed: 10
+  max_diff_lines: 500
+  max_attempts: 3
+
