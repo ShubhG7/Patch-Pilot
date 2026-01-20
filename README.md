@@ -53,6 +53,29 @@ This repo includes three deterministic “repro branches” you can reference fr
 - **Issue 3 (hard)**: small refactor across 2 files (still within guardrails)  
   - **Repro Branch:** `seed/issue-3`
 
+Suggested issue bodies (copy/paste):
+
+- **Issue 1**:
+
+  - Title: `divide() should raise ZeroDivisionError`
+  - Body:
+    - `Repro Branch: seed/issue-1`
+    - `pytest -q` fails because divide-by-zero does not raise.
+
+- **Issue 2**:
+
+  - Title: `mean() should ignore None entries`
+  - Body:
+    - `Repro Branch: seed/issue-2`
+    - Update `mean()` to treat `None` as “missing” and compute the mean of the remaining values.
+
+- **Issue 3**:
+
+  - Title: `Fix mean precision + trim normalize_whitespace`
+  - Body:
+    - `Repro Branch: seed/issue-3`
+    - `mean()` should not truncate; `normalize_whitespace()` should strip ends.
+
 To run locally on a seed branch:
 
 ```bash
