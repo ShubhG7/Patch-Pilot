@@ -214,6 +214,8 @@ def build_graph(
         try:
             guard.validate_diff(diff)
         except GuardrailViolation as e:
+            repo.git_reset_hard()
+            repo.git_clean()
             s.failure_reason = f"Guardrail violation (diff): {e}"
             return s.model_dump()
         logger.log("apply_patch", "Applying diff with git apply")
@@ -276,7 +278,9 @@ def build_graph(
         s = AgentState(**state)
         if s.failure_reason:
             return s.model_dump()
-        diff = repo.git_diff()
+        # Validate the *actual* staged changes (includes added files).
+        run_cmd(["git", "add", "-A"], cwd=repo_root)
+        diff = run_cmd(["git", "diff", "--cached"], cwd=repo_root).stdout
         try:
             stats = guard.validate_diff(diff)
         except GuardrailViolation as e:
