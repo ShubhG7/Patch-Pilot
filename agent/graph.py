@@ -577,24 +577,26 @@ def build_graph(
         if s.attempt >= s.max_attempts:
             s.failure_reason = "Checks failed after max attempts."
             return s.model_dump()
-        # Build failure reason from test output so repair context includes it.
+        # Build failure description for logging (lint/test results are kept for repair context).
         fail_parts = []
         if s.lint_result and s.lint_result.returncode != 0:
             fail_parts.append(f"ruff failed (rc={s.lint_result.returncode})")
         if s.test_result and s.test_result.returncode != 0:
             fail_parts.append(f"pytest failed (rc={s.test_result.returncode})")
-        s.failure_reason = "; ".join(fail_parts) if fail_parts else "Checks failed"
+        fail_desc = "; ".join(fail_parts) if fail_parts else "Checks failed"
         # Reset working tree and try again.
         logger.log(
             "repair_or_finish",
             "Retrying after test/lint failure",
             level="warn",
             attempt=s.attempt,
-            failure_reason=s.failure_reason,
+            failure_reason=fail_desc,
         )
         repo.git_reset_hard()
         repo.git_clean()
-        # Stay on the same branch; patch will be applied again.
+        # Clear failure_reason so routing goes back to propose_patch (lint/test results are preserved).
+        s.failure_reason = None
+        s.checks_passed = False
         s.attempt += 1
         return s.model_dump()
 
