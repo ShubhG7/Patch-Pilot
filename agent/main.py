@@ -111,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
 
     graph = build_graph(repo_root=repo_root, gh=gh, llm=llm, logger=logger)
     try:
-        _ = graph.invoke(state)
+        final_state = graph.invoke(state)
     except Exception as e:  # noqa: BLE001
         tb = traceback.format_exc()
         logger.log("fatal", f"Unhandled exception: {e}", level="error", traceback=tb)
@@ -124,6 +124,18 @@ def main(argv: list[str] | None = None) -> int:
                     "Unhandled exception while running the agent. See workflow artifact `patchpilot_logs.jsonl`."
                 ),
             )
+        return 1
+
+    # Important: Actions should fail if the agent failed (even if it posted a comment),
+    # otherwise the portfolio demo looks "green" while PatchPilot reported failure.
+    try:
+        failure_reason = (final_state or {}).get("failure_reason")
+        pr_url = (final_state or {}).get("pr_url")
+    except Exception:  # noqa: BLE001
+        failure_reason = None
+        pr_url = None
+    if failure_reason and not pr_url:
+        logger.log("bootstrap", "PatchPilot finished with failure", level="error", failure_reason=failure_reason)
         return 1
 
     logger.log("bootstrap", "PatchPilot complete")

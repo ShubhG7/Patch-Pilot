@@ -29,6 +29,8 @@ PatchPilot is a **GitHub-embedded autonomous maintenance agent**. When an issue 
 2) (Optional) For local runs, copy `env.example` to your local env manager and export:
 
 - `LLM_API_KEY`
+- `GEMINI_MODEL` (optional override)
+- `GEMINI_API_VERSION` (optional; defaults to `v1beta`, auto-fallbacks to `v1`)
 - `GITHUB_TOKEN` (a PAT for local testing; Actions uses its own `GITHUB_TOKEN`)
 
 ## How to trigger PatchPilot
