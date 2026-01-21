@@ -18,6 +18,14 @@ from agent.tools.runner import run_cmd
 from agent.utils.slugify import slugify
 
 
+def _add_line_numbers(content: str) -> str:
+    """Add line numbers to file content to help the model reference correct lines."""
+    lines = content.splitlines()
+    width = len(str(len(lines)))
+    numbered = [f"{i+1:>{width}}| {line}" for i, line in enumerate(lines)]
+    return "\n".join(numbered)
+
+
 def _parse_repro_branch(text: str) -> str | None:
     # Hyphen must be first/last in a character class (or escaped) to avoid "bad character range" errors.
     m = re.search(r"Repro Branch:\s*([A-Za-z0-9._/\\-]+)", text or "", flags=re.IGNORECASE)
@@ -316,10 +324,11 @@ def build_graph(
             "\n"
             f"ISSUE TITLE:\n{s.issue.title}\n\n"
             f"ISSUE BODY:\n{s.issue.body}\n\n"
-            "CONTEXT FILES:\n"
+            "CONTEXT FILES (with line numbers):\n"
         )
         for p, content in s.file_context.items():
-            prompt += f"\n---\nFILE: {p}\n{_shorten(content, 2500)}\n"
+            numbered = _add_line_numbers(content)
+            prompt += f"\n---\nFILE: {p}\n{_shorten(numbered, 3000)}\n"
         logger.log("plan", "Generating plan via LLM", attempt=s.attempt)
         try:
             resp = llm.generate_text(prompt)
@@ -381,16 +390,18 @@ def build_graph(
             f"  - allowed_paths={rules_cfg.allowed_paths}\n"
             f"  - blocked_paths={rules_cfg.blocked_paths}\n"
             "\n"
-            "IMPORTANT: Read the CONTEXT FILES below carefully. Your diff context lines\n"
-            "must EXACTLY match the actual file content (copy them precisely).\n"
+            "IMPORTANT: Read the CONTEXT FILES below carefully.\n"
+            "- Line numbers are shown as `N| content` - use these to set correct @@ line numbers.\n"
+            "- Your diff context lines must EXACTLY match the file content (without the line number prefix).\n"
             "\n"
             f"ISSUE TITLE:\n{s.issue.title}\n\n"
             f"ISSUE BODY:\n{s.issue.body}\n\n"
             f"PLAN:\n{s.plan_text or ''}\n\n"
-            "CONTEXT FILES:\n"
+            "CONTEXT FILES (with line numbers):\n"
         )
         for p, content in s.file_context.items():
-            prompt += f"\n---\nFILE: {p}\n{_shorten(content, 2500)}\n"
+            numbered = _add_line_numbers(content)
+            prompt += f"\n---\nFILE: {p}\n{_shorten(numbered, 3000)}\n"
         prompt += repair_context
         logger.log("propose_patch", "Generating patch via LLM", attempt=s.attempt)
         try:
