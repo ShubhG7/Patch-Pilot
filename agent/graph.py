@@ -48,19 +48,31 @@ def _unwrap_json_diff(text: str) -> str | None:
         try:
             obj = json.loads(candidate)
             if isinstance(obj, dict) and isinstance(obj.get("diff"), str) and obj["diff"].strip():
-                return obj["diff"].strip()
+                # json.loads already decodes \n to actual newlines
+                result = obj["diff"].strip()
+                # Ensure we have actual newlines, not literal \n
+                if "\\n" in result and "\n" not in result:
+                    # Double-encoded? Try decoding again
+                    result = result.replace("\\n", "\n")
+                return result
         except Exception:  # noqa: BLE001
             pass
     # Fallback: regex-capture a JSON string literal for the diff field, then decode escapes.
-    m = re.search(r'"diff"\s*:\s*"((?:\\.|[^"])*)"', t)
+    m = re.search(r'"diff"\s*:\s*"((?:\\.|[^"])*)"', t, re.DOTALL)
     if not m:
         return None
     captured = m.group(1)
     try:
-        decoded = json.loads(f"\"{captured}\"")
+        # Decode the JSON string (this handles \n -> newline)
+        decoded = json.loads(f'"{captured}"')
+        if isinstance(decoded, str):
+            # Ensure newlines are actual newlines
+            if "\\n" in decoded and "\n" not in decoded:
+                decoded = decoded.replace("\\n", "\n")
+            return decoded.strip() if decoded.strip() else None
     except Exception:  # noqa: BLE001
         return None
-    return decoded.strip() if isinstance(decoded, str) and decoded.strip() else None
+    return None
 
 
 def _extract_diff(model_text: str) -> str:
@@ -377,12 +389,17 @@ def build_graph(
             s.branch_name = f"agent/issue-{s.issue_number}-{slugify(s.issue.title)}"
 
         diff = s.diff_text or ""
-        # Belt-and-suspenders: unwrap JSON diff if it leaked through.
+        # Belt-and-suspenders: unwrap JSON diff if it leaked through (shouldn't happen if _extract_diff worked).
         if diff.lstrip().startswith("{"):
             unwrapped = _unwrap_json_diff(diff)
             if unwrapped:
                 diff = unwrapped
                 s.diff_text = unwrapped
+        # Also handle case where diff has literal \n instead of newlines (double-encoded or malformed JSON).
+        if "\\n" in diff and diff.count("\n") < diff.count("\\n"):
+            # Replace literal \n with actual newlines
+            diff = diff.replace("\\n", "\n")
+            s.diff_text = diff
         try:
             guard.validate_diff(diff)
         except GuardrailViolation as e:
