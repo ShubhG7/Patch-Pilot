@@ -274,6 +274,14 @@ def build_graph(
             repo.git_clean()
             s.failure_reason = f"Guardrail violation (diff): {e}"
             logger.log("apply_patch", "Guardrail blocked diff", level="warn", reason=str(e))
+            # Add a small preview to make failures diagnosable from logs without downloading artifacts.
+            preview = "\n".join((diff or "").splitlines()[:40])
+            logger.log(
+                "apply_patch",
+                "Diff preview (first 40 lines)",
+                level="warn",
+                preview=_shorten(preview, 2000),
+            )
             return s.model_dump()
         logger.log("apply_patch", "Applying diff with git apply")
         r = repo.git_apply(diff)
@@ -425,6 +433,8 @@ def build_graph(
 
     def finalize(state: dict[str, Any]) -> dict[str, Any]:
         s = AgentState(**state)
+        if not s.pr_url and not s.checks_passed and not s.failure_reason:
+            s.failure_reason = "Aborted before creating a PR (no successful patch/checks)."
         logger.log(
             "finalize",
             "Finalizing run",
@@ -449,8 +459,6 @@ def build_graph(
             return "finalize"
         if s.checks_passed:
             return "guardrails_validate"
-        if s.attempt >= s.max_attempts:
-            return "finalize"
         return "propose_patch"
 
     graph = StateGraph(dict)
