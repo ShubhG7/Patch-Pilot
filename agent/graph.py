@@ -19,7 +19,8 @@ from agent.utils.slugify import slugify
 
 
 def _parse_repro_branch(text: str) -> str | None:
-    m = re.search(r"Repro Branch:\s*([A-Za-z0-9._\\-/]+)", text or "", flags=re.IGNORECASE)
+    # Hyphen must be first/last in a character class (or escaped) to avoid "bad character range" errors.
+    m = re.search(r"Repro Branch:\s*([A-Za-z0-9._/\\-]+)", text or "", flags=re.IGNORECASE)
     return m.group(1).strip() if m else None
 
 
