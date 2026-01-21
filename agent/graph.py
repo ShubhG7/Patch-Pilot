@@ -251,6 +251,14 @@ def build_graph(
                     "Ensure EVERY line in hunk bodies starts with exactly one of: space, `+`, or `-`.\n"
                     "Do NOT include raw code lines without these prefixes.\n"
                 )
+                # Show the model exactly what it produced (so it can see the mistake).
+                if s.diff_text:
+                    corrupt_preview = "\n".join(s.diff_text.splitlines()[:60])
+                    repair_context += (
+                        f"\nHere is what you produced (first 60 lines) - this was REJECTED:\n"
+                        f"```\n{corrupt_preview}\n```\n"
+                        f"Look at the hunk body lines - they MUST start with ` `, `+`, or `-`.\n"
+                    )
             if s.lint_result:
                 repair_context += (
                     f"\nruff rc={s.lint_result.returncode}\n"
