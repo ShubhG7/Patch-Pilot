@@ -66,23 +66,30 @@ class RepoTools:
         return hits
 
     def git_apply_check(self, diff_text: str) -> RunResult:
-        """Validate a diff with git apply --check (does not modify working tree)."""
+        """Validate a diff with git apply --check (does not modify working tree).
+        
+        Uses -C1 to be tolerant of line number mismatches (models often get these wrong).
+        """
         patch_path = self.repo_root / ".patchpilot.check"
         patch_path.write_text(diff_text, encoding="utf-8")
         try:
-            return run_cmd(["git", "apply", "--check", str(patch_path)], cwd=self.repo_root)
+            return run_cmd(["git", "apply", "--check", "-C1", str(patch_path)], cwd=self.repo_root)
         finally:
             with contextlib.suppress(OSError):
                 patch_path.unlink(missing_ok=True)
 
     def git_apply(self, diff_text: str) -> RunResult:
+        """Apply a diff to the working tree.
+        
+        Uses -C1 to be tolerant of line number mismatches (models often get these wrong).
+        """
         patch_path = self.repo_root / ".patchpilot.patch"
         patch_path.write_text(diff_text, encoding="utf-8")
         try:
-            check = run_cmd(["git", "apply", "--check", str(patch_path)], cwd=self.repo_root)
+            check = run_cmd(["git", "apply", "--check", "-C1", str(patch_path)], cwd=self.repo_root)
             if check.returncode != 0:
                 return check
-            return run_cmd(["git", "apply", str(patch_path)], cwd=self.repo_root)
+            return run_cmd(["git", "apply", "-C1", str(patch_path)], cwd=self.repo_root)
         finally:
             with contextlib.suppress(OSError):
                 patch_path.unlink(missing_ok=True)
