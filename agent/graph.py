@@ -42,17 +42,49 @@ def _extract_diff(model_text: str) -> str:
                 return obj["diff"].strip()
         except Exception:  # noqa: BLE001
             pass
-    # Try to extract a likely diff block if the model included extra text.
+    # Extract only the unified diff block (models sometimes append commentary after the patch).
     lines = text.splitlines()
-    # Prefer explicit diff headers when present.
-    start_idx = None
+
+    def is_diff_line(line: str) -> bool:
+        return (
+            line.startswith("diff --git ")
+            or line.startswith("index ")
+            or line.startswith("--- ")
+            or line.startswith("+++ ")
+            or line.startswith("@@")
+            or line.startswith("+")
+            or line.startswith("-")
+            or line.startswith(" ")
+            or line.startswith("\\ No newline at end of file")
+        )
+
+    # Find start of diff.
+    start = None
     for i, line in enumerate(lines):
         if line.startswith("diff --git ") or line.startswith("--- "):
-            start_idx = i
+            start = i
             break
-    if start_idx is not None:
-        return "\n".join(lines[start_idx:]).strip()
-    return text.strip()
+    if start is None:
+        return text.strip()
+
+    # Collect until the first clearly non-diff line after we've seen at least one hunk header.
+    out: list[str] = []
+    seen_hunk = False
+    for line in lines[start:]:
+        if line.startswith("@@"):
+            seen_hunk = True
+        if is_diff_line(line):
+            out.append(line)
+            continue
+        # Allow a few blank lines inside diff before hunks.
+        if line.strip() == "" and not seen_hunk:
+            out.append(line)
+            continue
+        if seen_hunk:
+            break
+        # If we're still before hunks and hit non-diff text, treat as not-a-diff.
+        return text.strip()
+    return "\n".join(out).strip()
 
 
 def _looks_like_unified_diff(diff_text: str) -> bool:
