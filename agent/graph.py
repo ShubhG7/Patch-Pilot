@@ -42,6 +42,19 @@ def _extract_diff(model_text: str) -> str:
                 return obj["diff"].strip()
         except Exception:  # noqa: BLE001
             pass
+        # Fallback: extract "diff" field even if the JSON is malformed (e.g., literal newlines in the string).
+        m = re.search(r'"diff"\s*:\s*"([\s\S]*?)"\s*}', text)
+        if m:
+            raw = m.group(1)
+            # Make it a valid JSON string literal by escaping any real newlines, then decode escapes.
+            raw = raw.replace("\r\n", "\n").replace("\r", "\n")
+            raw = raw.replace("\n", "\\n")
+            try:
+                decoded = json.loads(f"\"{raw}\"")
+                if isinstance(decoded, str) and decoded.strip():
+                    return decoded.strip()
+            except Exception:  # noqa: BLE001
+                pass
     # Extract only the unified diff block (models sometimes append commentary after the patch).
     lines = text.splitlines()
 
