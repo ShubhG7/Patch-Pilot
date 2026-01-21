@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
@@ -11,8 +12,10 @@ class GuardrailViolation(RuntimeError):
 
 
 def _matches_any(path: str, globs: list[str]) -> bool:
-    p = PurePosixPath(path)
-    return any(p.match(g) for g in globs)
+    # pathlib.PurePath.match has surprising edge cases with "**" depending on pattern shape.
+    # Use fnmatch against POSIX-style paths for predictable repo-glob behavior.
+    p = PurePosixPath(path).as_posix()
+    return any(fnmatch.fnmatchcase(p, g) for g in globs)
 
 
 @dataclass(frozen=True)
