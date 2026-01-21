@@ -343,13 +343,22 @@ def build_graph(
 
     def propose_patch(state: dict[str, Any]) -> dict[str, Any]:
         s = AgentState(**state)
-        if s.failure_reason:
+        # Only bail out if we've hit a terminal failure (max attempts reached or final error).
+        if s.failure_reason and s.attempt >= s.max_attempts:
             return s.model_dump()
         repair_context = ""
+        # Build repair context from previous attempt's results.
         if s.attempt > 1:
+            fail_info = []
+            if s.lint_result and s.lint_result.returncode != 0:
+                fail_info.append("lint failed")
+            if s.test_result and s.test_result.returncode != 0:
+                fail_info.append("tests failed")
+            if s.failure_reason:
+                fail_info.append(s.failure_reason)
             repair_context = (
                 "\nREPAIR CONTEXT (previous attempt failed):\n"
-                f"CRITICAL: previous_failure_reason={s.failure_reason or 'n/a'}\n"
+                f"CRITICAL: {', '.join(fail_info) if fail_info else 'unknown failure'}\n"
             )
             if s.failure_reason and ("corrupt patch" in s.failure_reason.lower() or "truncated" in s.failure_reason.lower()):
                 repair_context += (
@@ -568,8 +577,21 @@ def build_graph(
         if s.attempt >= s.max_attempts:
             s.failure_reason = "Checks failed after max attempts."
             return s.model_dump()
+        # Build failure reason from test output so repair context includes it.
+        fail_parts = []
+        if s.lint_result and s.lint_result.returncode != 0:
+            fail_parts.append(f"ruff failed (rc={s.lint_result.returncode})")
+        if s.test_result and s.test_result.returncode != 0:
+            fail_parts.append(f"pytest failed (rc={s.test_result.returncode})")
+        s.failure_reason = "; ".join(fail_parts) if fail_parts else "Checks failed"
         # Reset working tree and try again.
-        logger.log("repair_or_finish", "Repair iteration: resetting worktree", attempt=s.attempt)
+        logger.log(
+            "repair_or_finish",
+            "Retrying after test/lint failure",
+            level="warn",
+            attempt=s.attempt,
+            failure_reason=s.failure_reason,
+        )
         repo.git_reset_hard()
         repo.git_clean()
         # Stay on the same branch; patch will be applied again.
