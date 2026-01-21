@@ -545,6 +545,15 @@ def build_graph(
             checks_passed=s.checks_passed,
             pytest_rc=test.returncode,
         )
+        # Log test output when tests fail for debugging
+        if not s.checks_passed:
+            logger.log(
+                "run_checks",
+                "Test failure details",
+                level="warn",
+                pytest_stdout=_shorten(test.stdout, 2000),
+                pytest_stderr=_shorten(test.stderr, 1000),
+            )
         return s.model_dump()
 
     def repair_or_finish(state: dict[str, Any]) -> dict[str, Any]:
