@@ -31,7 +31,7 @@ jobs:
 
       - name: Run PatchPilot
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
         run: |
           python -m agent.main --log-path patchpilot_logs.jsonl
