@@ -93,19 +93,23 @@ def _extract_diff(model_text: str) -> str:
     if start is None:
         return text.strip()
 
-    # Collect until the first clearly non-diff line after we've seen at least one hunk header.
+    # Collect until the start of a second file (new `--- a/` or `diff --git`) or non-diff text.
     out: list[str] = []
     seen_hunk = False
-    for line in lines[start:]:
+    for i, line in enumerate(lines[start:], start=start):
+        # Stop if we hit a second file's header.
+        if i > start and (line.startswith("diff --git ") or line.startswith("--- a/")):
+            break
         if line.startswith("@@"):
             seen_hunk = True
         if is_diff_line(line):
             out.append(line)
             continue
-        # Allow a few blank lines inside diff before hunks.
-        if line.strip() == "" and not seen_hunk:
+        # Allow blank lines within the diff.
+        if line.strip() == "":
             out.append(line)
             continue
+        # If we've seen a hunk and hit non-diff text, we're done with this file.
         if seen_hunk:
             break
         # If we're still before hunks and hit non-diff text, treat as not-a-diff.
@@ -279,8 +283,10 @@ def build_graph(
             "  OR\n"
             "  B) JSON ONLY: {\"diff\": \"<unified diff>\"}\n"
             "- The unified diff MUST be compatible with `git apply`.\n"
+            "- ONLY modify the file(s) that actually need to be fixed. Do NOT modify other files unless the issue explicitly requires it.\n"
             "- Include file headers (at minimum `--- a/...` and `+++ b/...`) and at least one hunk header (`@@`).\n"
             "- In hunks, EVERY code line must start with one of: space (context), `+`, or `-`.\n"
+            "- Hunk context lines (starting with space) MUST exactly match the current file content at those line numbers.\n"
             "  Example VALID hunk (note every line has a prefix):\n"
             "  @@ -12,7 +12,6 @@\n"
             "       ZeroDivisionError: if b is 0.\n"
