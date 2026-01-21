@@ -14,8 +14,7 @@ def divide(a: float, b: float) -> float:
         ZeroDivisionError: if b is 0.
     """
     if b == 0:
-        # BUG (seed/issue-1): should raise, but returns 0.0
-        return 0.0
+        raise ZeroDivisionError("Cannot divide by zero")
     return a / b
 
 
