@@ -32,29 +32,42 @@ def _strip_code_fences(s: str) -> str:
     return s
 
 
-def _extract_diff(model_text: str) -> str:
-    text = _strip_code_fences(model_text)
-    # Support {"diff": "..."} wrapper
-    if text.lstrip().startswith("{"):
+def _unwrap_json_diff(text: str) -> str | None:
+    """Extract and decode a JSON-wrapped diff like {"diff": "..."}.
+
+    Models sometimes return the patch as JSON with escaped newlines; we need the decoded diff text.
+    """
+    t = _strip_code_fences(text).strip()
+    if '"diff"' not in t:
+        return None
+    # Try parsing the largest JSON-ish object in the text.
+    start = t.find("{")
+    end = t.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidate = t[start : end + 1]
         try:
-            obj = json.loads(text)
-            if isinstance(obj, dict) and isinstance(obj.get("diff"), str):
+            obj = json.loads(candidate)
+            if isinstance(obj, dict) and isinstance(obj.get("diff"), str) and obj["diff"].strip():
                 return obj["diff"].strip()
         except Exception:  # noqa: BLE001
             pass
-        # Fallback: extract "diff" field even if the JSON is malformed (e.g., literal newlines in the string).
-        m = re.search(r'"diff"\s*:\s*"([\s\S]*?)"\s*}', text)
-        if m:
-            raw = m.group(1)
-            # Make it a valid JSON string literal by escaping any real newlines, then decode escapes.
-            raw = raw.replace("\r\n", "\n").replace("\r", "\n")
-            raw = raw.replace("\n", "\\n")
-            try:
-                decoded = json.loads(f"\"{raw}\"")
-                if isinstance(decoded, str) and decoded.strip():
-                    return decoded.strip()
-            except Exception:  # noqa: BLE001
-                pass
+    # Fallback: regex-capture a JSON string literal for the diff field, then decode escapes.
+    m = re.search(r'"diff"\s*:\s*"((?:\\.|[^"])*)"', t)
+    if not m:
+        return None
+    captured = m.group(1)
+    try:
+        decoded = json.loads(f"\"{captured}\"")
+    except Exception:  # noqa: BLE001
+        return None
+    return decoded.strip() if isinstance(decoded, str) and decoded.strip() else None
+
+
+def _extract_diff(model_text: str) -> str:
+    text = _strip_code_fences(model_text)
+    unwrapped = _unwrap_json_diff(text)
+    if unwrapped is not None:
+        return unwrapped
     # Extract only the unified diff block (models sometimes append commentary after the patch).
     lines = text.splitlines()
 
@@ -280,6 +293,12 @@ def build_graph(
                 s.failure_reason = f"Failed to create branch {s.branch_name}:\n{_shorten(r.stderr)}"
                 return s.model_dump()
         diff = s.diff_text or ""
+        # Belt-and-suspenders: unwrap JSON diff if it leaked through.
+        if diff.lstrip().startswith("{"):
+            unwrapped = _unwrap_json_diff(diff)
+            if unwrapped:
+                diff = unwrapped
+                s.diff_text = unwrapped
         try:
             guard.validate_diff(diff)
         except GuardrailViolation as e:
