@@ -32,10 +32,26 @@ def parse_unified_diff(diff_text: str) -> DiffStats:
             if len(parts) >= 4 and parts[3].startswith("b/"):
                 current_file = parts[3][2:]
                 files.append(current_file)
-        elif line.startswith("+++ b/"):
-            current_file = line[len("+++ b/") :]
+        elif line.startswith("+++ "):
+            # +++ b/foo OR +++ foo (some generators omit the prefix)
+            path = line[len("+++ ") :].strip()
+            if path == "/dev/null":
+                current_file = None
+                continue
+            if path.startswith("b/"):
+                path = path[2:]
+            current_file = path
             if current_file and current_file not in files:
                 files.append(current_file)
+        elif line.startswith("--- "):
+            # fallback: --- a/foo OR --- foo (if +++ is missing/odd)
+            path = line[len("--- ") :].strip()
+            if path == "/dev/null":
+                continue
+            if path.startswith("a/"):
+                path = path[2:]
+            if path and path not in files:
+                files.append(path)
         elif (line.startswith("+") and not line.startswith("+++")) or (
             line.startswith("-") and not line.startswith("---")
         ):
