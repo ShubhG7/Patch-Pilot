@@ -273,7 +273,7 @@ def build_graph(
             "- The unified diff MUST be compatible with `git apply`.\n"
             "- Include file headers (at minimum `--- a/...` and `+++ b/...`) and at least one hunk header (`@@`).\n"
             "- In hunks, EVERY code line must start with one of: space (context), `+`, or `-`.\n"
-            "  Example valid hunk:\n"
+            "  Example VALID hunk (note every line has a prefix):\n"
             "  @@ -12,7 +12,6 @@\n"
             "       ZeroDivisionError: if b is 0.\n"
             "   \"\"\"\n"
@@ -282,6 +282,14 @@ def build_graph(
             "-      return 0.0\n"
             "+      raise ZeroDivisionError(\"Cannot divide by zero\")\n"
             "   return a / b\n"
+            "  Example INVALID (will be rejected by git apply):\n"
+            "  @@ -12,7 +12,6 @@\n"
+            "       ZeroDivisionError: if b is 0.\n"
+            "   \"\"\"\n"
+            "   if b == 0:\n"
+            "      # BUG comment  <-- MISSING `-` prefix!\n"
+            "      return 0.0  <-- MISSING `-` prefix!\n"
+            "      raise ZeroDivisionError(\"Cannot divide by zero\")  <-- MISSING `+` prefix!\n"
             "- Do NOT include any other text like 'Step 2' or explanations.\n"
             "- Stay within guardrails:\n"
             f"  - allowed_paths={rules_cfg.allowed_paths}\n"
@@ -353,6 +361,14 @@ def build_graph(
                 level="warn",
                 stderr=_shorten(check_result.stderr or "", 500),
             )
+            # Log diff preview for debugging (what did the model actually produce?).
+            preview = "\n".join((diff or "").splitlines()[:40])
+            logger.log(
+                "apply_patch",
+                "Corrupt diff preview (first 40 lines)",
+                level="warn",
+                preview=_shorten(preview, 2000),
+            )
             return s.model_dump()
         # Branch name (create once, before applying patch, per workflow steps).
         logger.log("apply_patch", "Creating work branch", branch=s.branch_name)
@@ -413,6 +429,7 @@ def build_graph(
             retryable_prefixes = (
                 "Guardrail violation (diff):",
                 "Failed to apply patch:",
+                "Diff failed git apply --check",
                 "LLM patch generation failed:",
                 "Model did not return a valid unified diff",
             )
