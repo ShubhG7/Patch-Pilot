@@ -8,7 +8,8 @@ _NON_ALNUM_RE = re.compile(r"[^a-z0-9-]+")
 
 def normalize_whitespace(text: str) -> str:
     """Collapse all whitespace runs to single spaces and strip ends."""
-    return _WS_RE.sub(" ", text).strip()
+    # BUG (seed/issue-3): forgot to strip ends.
+    return _WS_RE.sub(" ", text)
 
 
 def slugify_title(title: str, max_len: int = 30) -> str:
