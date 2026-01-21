@@ -75,6 +75,55 @@ def _unwrap_json_diff(text: str) -> str | None:
     return None
 
 
+def _fix_hunk_headers(diff_text: str) -> str:
+    """Fix incorrect line counts in hunk headers.
+    
+    Models often get the counts wrong. This recalculates them from actual content.
+    """
+    import re
+    lines = diff_text.splitlines()
+    result = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        # Look for hunk header
+        hunk_match = re.match(r'^@@ -(\d+),?\d* \+(\d+),?\d* @@(.*)$', line)
+        if hunk_match:
+            start_old = int(hunk_match.group(1))
+            start_new = int(hunk_match.group(2))
+            suffix = hunk_match.group(3)
+            # Collect hunk body lines
+            i += 1
+            hunk_lines = []
+            while i < len(lines):
+                hline = lines[i]
+                # Stop at next hunk, next file, or non-diff line
+                if hline.startswith('@@') or hline.startswith('--- ') or hline.startswith('diff --git'):
+                    break
+                if hline.startswith((' ', '+', '-', '\\')):
+                    hunk_lines.append(hline)
+                    i += 1
+                elif hline.strip() == '':
+                    # Empty line in hunk - treat as context
+                    hunk_lines.append(' ')
+                    i += 1
+                else:
+                    break
+            # Count lines
+            old_count = sum(1 for h in hunk_lines if h.startswith(' ') or h.startswith('-'))
+            new_count = sum(1 for h in hunk_lines if h.startswith(' ') or h.startswith('+'))
+            # Don't count "\ No newline" lines
+            old_count -= sum(1 for h in hunk_lines if h.startswith('\\'))
+            new_count -= sum(1 for h in hunk_lines if h.startswith('\\'))
+            # Build corrected header
+            result.append(f'@@ -{start_old},{old_count} +{start_new},{new_count} @@{suffix}')
+            result.extend(hunk_lines)
+        else:
+            result.append(line)
+            i += 1
+    return '\n'.join(result)
+
+
 def _extract_diff(model_text: str) -> str:
     text = _strip_code_fences(model_text)
     unwrapped = _unwrap_json_diff(text)
@@ -132,7 +181,10 @@ def _extract_diff(model_text: str) -> str:
     # git apply requires a trailing newline
     result = "\n".join(out).strip()
     if result:
-        result += "\n"
+        # Fix potentially incorrect hunk line counts
+        result = _fix_hunk_headers(result)
+        if not result.endswith("\n"):
+            result += "\n"
     return result
 
 
