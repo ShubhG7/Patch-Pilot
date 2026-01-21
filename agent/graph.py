@@ -243,6 +243,7 @@ def build_graph(
         if s.attempt > 1:
             repair_context = (
                 "\nREPAIR CONTEXT (previous attempt failed):\n"
+                f"previous_failure_reason={s.failure_reason or 'n/a'}\n"
                 f"ruff rc={s.lint_result.returncode if s.lint_result else 'n/a'}\n"
                 f"ruff out:\n{_shorten(s.lint_result.stdout if s.lint_result else '', 1500)}\n"
                 f"ruff err:\n{_shorten(s.lint_result.stderr if s.lint_result else '', 1500)}\n"
@@ -253,7 +254,13 @@ def build_graph(
         prompt = (
             "You are PatchPilot. Produce a single unified diff to fix the issue.\n"
             "Output requirements (critical):\n"
-            "- Output ONLY a unified diff (no commentary), OR JSON: {\"diff\": \"...\"}\n"
+            "- Output MUST be either:\n"
+            "  A) a unified diff ONLY (no commentary)\n"
+            "  OR\n"
+            "  B) JSON ONLY: {\"diff\": \"<unified diff>\"}\n"
+            "- The unified diff MUST be compatible with `git apply`.\n"
+            "- Include file headers (at minimum `--- a/...` and `+++ b/...`) and at least one hunk header (`@@`).\n"
+            "- Do NOT include any other text like 'Step 2' or explanations.\n"
             "- Stay within guardrails:\n"
             f"  - allowed_paths={rules_cfg.allowed_paths}\n"
             f"  - blocked_paths={rules_cfg.blocked_paths}\n"
@@ -284,14 +291,10 @@ def build_graph(
         s = AgentState(**state)
         if s.failure_reason:
             return s.model_dump()
-        # Branch name (create once, before applying patch, per workflow steps).
+        # Compute branch name, but only create it after we know the diff is valid.
         if not s.branch_name:
             s.branch_name = f"agent/issue-{s.issue_number}-{slugify(s.issue.title)}"
-            logger.log("apply_patch", "Creating work branch", branch=s.branch_name)
-            r = run_cmd(["git", "checkout", "-b", s.branch_name], cwd=repo_root)
-            if r.returncode != 0:
-                s.failure_reason = f"Failed to create branch {s.branch_name}:\n{_shorten(r.stderr)}"
-                return s.model_dump()
+
         diff = s.diff_text or ""
         # Belt-and-suspenders: unwrap JSON diff if it leaked through.
         if diff.lstrip().startswith("{"):
@@ -314,6 +317,12 @@ def build_graph(
                 level="warn",
                 preview=_shorten(preview, 2000),
             )
+            return s.model_dump()
+        # Branch name (create once, before applying patch, per workflow steps).
+        logger.log("apply_patch", "Creating work branch", branch=s.branch_name)
+        r = run_cmd(["git", "checkout", "-b", s.branch_name], cwd=repo_root)
+        if r.returncode != 0:
+            s.failure_reason = f"Failed to create branch {s.branch_name}:\n{_shorten(r.stderr)}"
             return s.model_dump()
         logger.log("apply_patch", "Applying diff with git apply")
         r = repo.git_apply(diff)
