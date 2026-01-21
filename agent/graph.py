@@ -283,19 +283,19 @@ def build_graph(
                 "\nREPAIR CONTEXT (previous attempt failed):\n"
                 f"CRITICAL: previous_failure_reason={s.failure_reason or 'n/a'}\n"
             )
-            if s.failure_reason and "corrupt patch" in s.failure_reason.lower():
+            if s.failure_reason and ("corrupt patch" in s.failure_reason.lower() or "truncated" in s.failure_reason.lower()):
                 repair_context += (
-                    "\nThe previous diff was rejected by `git apply --check` because it was corrupt.\n"
-                    "Ensure EVERY line in hunk bodies starts with exactly one of: space, `+`, or `-`.\n"
-                    "Do NOT include raw code lines without these prefixes.\n"
+                    "\nYour previous diff was REJECTED. Common mistakes:\n"
+                    "1. JSON wrapping - DO NOT wrap in JSON. Output raw diff only.\n"
+                    "2. Missing line prefixes - EVERY hunk line must start with space/+/-.\n"
+                    "3. Truncated diff - include the COMPLETE hunk with all changed lines.\n"
                 )
                 # Show the model exactly what it produced (so it can see the mistake).
                 if s.diff_text:
                     corrupt_preview = "\n".join(s.diff_text.splitlines()[:60])
                     repair_context += (
-                        f"\nHere is what you produced (first 60 lines) - this was REJECTED:\n"
+                        f"\nHere is what you produced - this was REJECTED:\n"
                         f"```\n{corrupt_preview}\n```\n"
-                        f"Look at the hunk body lines - they MUST start with ` `, `+`, or `-`.\n"
                     )
             if s.lint_result:
                 repair_context += (
@@ -311,16 +311,13 @@ def build_graph(
                 )
         prompt = (
             "You are PatchPilot. Produce a single unified diff to fix the issue.\n"
-            "Output requirements (critical):\n"
-            "- Output MUST be either:\n"
-            "  A) a unified diff ONLY (no commentary)\n"
-            "  OR\n"
-            "  B) JSON ONLY: {\"diff\": \"<unified diff>\"}\n"
-            "- The unified diff MUST be compatible with `git apply`.\n"
-            "- ONLY modify the file(s) that actually need to be fixed. Do NOT modify other files unless the issue explicitly requires it.\n"
-            "- Include file headers (at minimum `--- a/...` and `+++ b/...`) and at least one hunk header (`@@`).\n"
-            "- In hunks, EVERY code line must start with one of: space (context), `+`, or `-`.\n"
-            "- Hunk context lines (starting with space) MUST exactly match the current file content at those line numbers.\n"
+            "Output requirements (CRITICAL - follow exactly):\n"
+            "- Output ONLY a raw unified diff. NO JSON wrapping. NO commentary.\n"
+            "- The diff MUST be compatible with `git apply`.\n"
+            "- ONLY modify the file(s) that actually need to be fixed.\n"
+            "- Include file headers (`--- a/...` and `+++ b/...`) and hunk headers (`@@`).\n"
+            "- In hunks, EVERY line must start with: space (unchanged), `+` (added), or `-` (removed).\n"
+            "- Context lines MUST exactly match the current file content.\n"
             "  Example VALID hunk (note every line has a prefix):\n"
             "  @@ -12,7 +12,6 @@\n"
             "       ZeroDivisionError: if b is 0.\n"
