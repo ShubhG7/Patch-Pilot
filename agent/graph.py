@@ -506,6 +506,9 @@ def build_graph(
                 s.failure_reason = f"Failed to create branch {s.branch_name}:\n{_shorten(r.stderr)}"
                 return s.model_dump()
         logger.log("apply_patch", "Applying diff with git apply")
+        # Log the diff being applied for debugging
+        diff_preview = "\n".join(diff.splitlines()[:30])
+        logger.log("apply_patch", "Diff being applied", level="info", diff_preview=diff_preview)
         r = repo.git_apply(diff)
         if r.returncode != 0:
             s.failure_reason = f"Failed to apply patch:\n{_shorten(r.stderr)}"
