@@ -2,7 +2,7 @@ version: 1
 
 commands:
   lint: ["ruff", "check", "."]
-  test: ["pytest", "-q"]
+  test: ["pytest", "-v", "--tb=short"]
   # Optional; not used in the workflow by default
   format: ["ruff", "format", "."]
 
