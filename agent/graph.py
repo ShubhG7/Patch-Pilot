@@ -103,7 +103,9 @@ def _extract_diff(model_text: str) -> str:
             start = i
             break
     if start is None:
-        return text.strip()
+        # Not a recognizable diff; return as-is but ensure trailing newline
+        stripped = text.strip()
+        return stripped + "\n" if stripped else ""
 
     # Collect until the start of a second file (new `--- a/` or `diff --git`) or non-diff text.
     out: list[str] = []
@@ -125,8 +127,13 @@ def _extract_diff(model_text: str) -> str:
         if seen_hunk:
             break
         # If we're still before hunks and hit non-diff text, treat as not-a-diff.
-        return text.strip()
-    return "\n".join(out).strip()
+        stripped = text.strip()
+        return stripped + "\n" if stripped else ""
+    # git apply requires a trailing newline
+    result = "\n".join(out).strip()
+    if result:
+        result += "\n"
+    return result
 
 
 def _looks_like_unified_diff(diff_text: str) -> bool:
