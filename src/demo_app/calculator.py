@@ -26,7 +26,8 @@ def mean(values: list[float]) -> float:
     """
     if not values:
         raise ValueError("mean() requires at least one value")
-    return sum(values) / len(values)
+    valid_values = [v for v in values if v is not None]
+    return sum(valid_values) / len(valid_values)
 
 
 @dataclass(frozen=True)
