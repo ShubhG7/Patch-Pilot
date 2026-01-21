@@ -26,8 +26,7 @@ def mean(values: list[float]) -> float:
     """
     if not values:
         raise ValueError("mean() requires at least one value")
-    # BUG (seed/issue-3): mistakenly truncates to int.
-    return float(int(sum(values) / len(values)))
+    return sum(values) / len(values)
 
 
 @dataclass(frozen=True)
