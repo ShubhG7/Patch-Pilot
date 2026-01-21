@@ -127,6 +127,28 @@ def _looks_like_unified_diff(diff_text: str) -> bool:
     return has_file_hdr and has_hunk
 
 
+def _validate_hunk_prefixes(diff_text: str) -> tuple[bool, str]:
+    """Validate that every line in hunks starts with ` `, `+`, or `-`.
+    
+    Returns (is_valid, error_message).
+    """
+    lines = diff_text.splitlines()
+    in_hunk = False
+    for i, line in enumerate(lines, 1):
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if in_hunk:
+            if line.startswith("--- ") or line.startswith("+++ ") or line.startswith("diff --git "):
+                in_hunk = False
+                continue
+            if line.strip() == "":
+                continue  # Blank lines are OK
+            if not (line.startswith(" ") or line.startswith("+") or line.startswith("-")):
+                return False, f"Line {i} in hunk missing required prefix (must start with space, `+`, or `-`): {line[:60]}"
+    return True, ""
+
+
 def _shorten(s: str, n: int = 1200) -> str:
     s = s or ""
     return s if len(s) <= n else (s[:n] + "\n...<truncated>...\n")
@@ -377,6 +399,18 @@ def build_graph(
                 preview=_shorten(preview, 2000),
             )
             return s.model_dump()
+        # Validate hunk prefixes BEFORE git apply --check (catches format errors early).
+        is_valid, prefix_error = _validate_hunk_prefixes(diff)
+        if not is_valid:
+            s.failure_reason = f"Diff format error: {prefix_error}"
+            logger.log("apply_patch", "Hunk prefix validation failed", level="warn", error=prefix_error)
+            logger.log(
+                "apply_patch",
+                "Full corrupt diff (for debugging)",
+                level="warn",
+                full_diff=_shorten(diff or "", 5000),
+            )
+            return s.model_dump()
         # Validate with git apply --check BEFORE creating branch (catches corrupt patches early).
         logger.log("apply_patch", "Validating diff with git apply --check")
         check_result = repo.git_apply_check(diff)
@@ -390,13 +424,12 @@ def build_graph(
                 level="warn",
                 stderr=_shorten(check_result.stderr or "", 500),
             )
-            # Log diff preview for debugging (what did the model actually produce?).
-            preview = "\n".join((diff or "").splitlines()[:40])
+            # Log FULL diff for debugging (what did the model actually produce?).
             logger.log(
                 "apply_patch",
-                "Corrupt diff preview (first 40 lines)",
+                "Full corrupt diff (for debugging)",
                 level="warn",
-                preview=_shorten(preview, 2000),
+                full_diff=_shorten(diff or "", 5000),
             )
             return s.model_dump()
         # Branch name (create once, before applying patch, per workflow steps).
