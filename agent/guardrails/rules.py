@@ -24,6 +24,32 @@ class DiffStats:
     changed_lines: int
 
 
+def validate_git_applyable_unified_diff(diff_text: str) -> None:
+    """Validate basic unified diff syntax so `git apply` won't choke.
+
+    Common LLM failure mode: emits hunk bodies without the required line prefixes
+    (space/context, '+', '-' changes). That produces 'corrupt patch' errors.
+    """
+    lines = diff_text.splitlines()
+    if not any(line.startswith("@@") for line in lines):
+        raise GuardrailViolation("Diff has no hunks ('@@' header missing)")
+
+    in_hunk = False
+    for line in lines:
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if line.startswith(("diff --git ", "index ", "--- ", "+++ ")):
+            continue
+        if not in_hunk:
+            continue
+        # Inside a hunk, every line must start with one of these markers.
+        if line.startswith((" ", "+", "-", "\\ No newline at end of file")):
+            continue
+        # Empty string line is invalid in hunks (blank context line should be represented as " ").
+        raise GuardrailViolation("Invalid unified diff: hunk line missing prefix (expected ' ', '+', or '-')")
+
+
 def parse_unified_diff(diff_text: str) -> DiffStats:
     files: list[str] = []
     changed = 0
@@ -83,6 +109,7 @@ class Guardrails:
     def validate_diff(self, diff_text: str) -> DiffStats:
         if not diff_text.strip():
             raise GuardrailViolation("Empty diff")
+        validate_git_applyable_unified_diff(diff_text)
         stats = parse_unified_diff(diff_text)
         if not stats.files:
             raise GuardrailViolation("Could not determine changed files from diff")

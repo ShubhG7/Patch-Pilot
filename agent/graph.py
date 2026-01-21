@@ -260,6 +260,7 @@ def build_graph(
             "  B) JSON ONLY: {\"diff\": \"<unified diff>\"}\n"
             "- The unified diff MUST be compatible with `git apply`.\n"
             "- Include file headers (at minimum `--- a/...` and `+++ b/...`) and at least one hunk header (`@@`).\n"
+            "- In hunks, EVERY code line must start with one of: space (context), `+`, or `-`.\n"
             "- Do NOT include any other text like 'Step 2' or explanations.\n"
             "- Stay within guardrails:\n"
             f"  - allowed_paths={rules_cfg.allowed_paths}\n"
@@ -322,8 +323,15 @@ def build_graph(
         logger.log("apply_patch", "Creating work branch", branch=s.branch_name)
         r = run_cmd(["git", "checkout", "-b", s.branch_name], cwd=repo_root)
         if r.returncode != 0:
-            s.failure_reason = f"Failed to create branch {s.branch_name}:\n{_shorten(r.stderr)}"
-            return s.model_dump()
+            # If the branch already exists from a prior attempt/run, just reuse it.
+            if "already exists" in (r.stderr or ""):
+                r2 = run_cmd(["git", "checkout", s.branch_name], cwd=repo_root)
+                if r2.returncode != 0:
+                    s.failure_reason = f"Failed to checkout existing branch {s.branch_name}:\n{_shorten(r2.stderr)}"
+                    return s.model_dump()
+            else:
+                s.failure_reason = f"Failed to create branch {s.branch_name}:\n{_shorten(r.stderr)}"
+                return s.model_dump()
         logger.log("apply_patch", "Applying diff with git apply")
         r = repo.git_apply(diff)
         if r.returncode != 0:
