@@ -65,6 +65,16 @@ class RepoTools:
                     break
         return hits
 
+    def git_apply_check(self, diff_text: str) -> RunResult:
+        """Validate a diff with git apply --check (does not modify working tree)."""
+        patch_path = self.repo_root / ".patchpilot.check"
+        patch_path.write_text(diff_text, encoding="utf-8")
+        try:
+            return run_cmd(["git", "apply", "--check", str(patch_path)], cwd=self.repo_root)
+        finally:
+            with contextlib.suppress(OSError):
+                patch_path.unlink(missing_ok=True)
+
     def git_apply(self, diff_text: str) -> RunResult:
         patch_path = self.repo_root / ".patchpilot.patch"
         patch_path.write_text(diff_text, encoding="utf-8")

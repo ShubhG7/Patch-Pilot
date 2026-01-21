@@ -243,14 +243,26 @@ def build_graph(
         if s.attempt > 1:
             repair_context = (
                 "\nREPAIR CONTEXT (previous attempt failed):\n"
-                f"previous_failure_reason={s.failure_reason or 'n/a'}\n"
-                f"ruff rc={s.lint_result.returncode if s.lint_result else 'n/a'}\n"
-                f"ruff out:\n{_shorten(s.lint_result.stdout if s.lint_result else '', 1500)}\n"
-                f"ruff err:\n{_shorten(s.lint_result.stderr if s.lint_result else '', 1500)}\n"
-                f"pytest rc={s.test_result.returncode if s.test_result else 'n/a'}\n"
-                f"pytest out:\n{_shorten(s.test_result.stdout if s.test_result else '', 1500)}\n"
-                f"pytest err:\n{_shorten(s.test_result.stderr if s.test_result else '', 1500)}\n"
+                f"CRITICAL: previous_failure_reason={s.failure_reason or 'n/a'}\n"
             )
+            if s.failure_reason and "corrupt patch" in s.failure_reason.lower():
+                repair_context += (
+                    "\nThe previous diff was rejected by `git apply --check` because it was corrupt.\n"
+                    "Ensure EVERY line in hunk bodies starts with exactly one of: space, `+`, or `-`.\n"
+                    "Do NOT include raw code lines without these prefixes.\n"
+                )
+            if s.lint_result:
+                repair_context += (
+                    f"\nruff rc={s.lint_result.returncode}\n"
+                    f"ruff out:\n{_shorten(s.lint_result.stdout, 1500)}\n"
+                    f"ruff err:\n{_shorten(s.lint_result.stderr, 1500)}\n"
+                )
+            if s.test_result:
+                repair_context += (
+                    f"\npytest rc={s.test_result.returncode}\n"
+                    f"pytest out:\n{_shorten(s.test_result.stdout, 1500)}\n"
+                    f"pytest err:\n{_shorten(s.test_result.stderr, 1500)}\n"
+                )
         prompt = (
             "You are PatchPilot. Produce a single unified diff to fix the issue.\n"
             "Output requirements (critical):\n"
@@ -261,6 +273,15 @@ def build_graph(
             "- The unified diff MUST be compatible with `git apply`.\n"
             "- Include file headers (at minimum `--- a/...` and `+++ b/...`) and at least one hunk header (`@@`).\n"
             "- In hunks, EVERY code line must start with one of: space (context), `+`, or `-`.\n"
+            "  Example valid hunk:\n"
+            "  @@ -12,7 +12,6 @@\n"
+            "       ZeroDivisionError: if b is 0.\n"
+            "   \"\"\"\n"
+            "   if b == 0:\n"
+            "-      # BUG comment\n"
+            "-      return 0.0\n"
+            "+      raise ZeroDivisionError(\"Cannot divide by zero\")\n"
+            "   return a / b\n"
             "- Do NOT include any other text like 'Step 2' or explanations.\n"
             "- Stay within guardrails:\n"
             f"  - allowed_paths={rules_cfg.allowed_paths}\n"
@@ -317,6 +338,20 @@ def build_graph(
                 "Diff preview (first 40 lines)",
                 level="warn",
                 preview=_shorten(preview, 2000),
+            )
+            return s.model_dump()
+        # Validate with git apply --check BEFORE creating branch (catches corrupt patches early).
+        logger.log("apply_patch", "Validating diff with git apply --check")
+        check_result = repo.git_apply_check(diff)
+        if check_result.returncode != 0:
+            s.failure_reason = (
+                f"Diff failed git apply --check (corrupt patch):\n{_shorten(check_result.stderr or check_result.stdout)}"
+            )
+            logger.log(
+                "apply_patch",
+                "git apply --check failed",
+                level="warn",
+                stderr=_shorten(check_result.stderr or "", 500),
             )
             return s.model_dump()
         # Branch name (create once, before applying patch, per workflow steps).
