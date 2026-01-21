@@ -5,6 +5,7 @@ import contextlib
 import json
 import os
 import sys
+import traceback
 from pathlib import Path
 
 from agent.graph import build_graph
@@ -112,7 +113,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         _ = graph.invoke(state)
     except Exception as e:  # noqa: BLE001
-        logger.log("fatal", f"Unhandled exception: {e}", level="error")
+        tb = traceback.format_exc()
+        logger.log("fatal", f"Unhandled exception: {e}", level="error", traceback=tb)
+        print(f"[PatchPilot] fatal error: {e}", file=sys.stderr)
         with contextlib.suppress(Exception):
             gh.post_issue_comment(
                 issue_num,

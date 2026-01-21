@@ -34,7 +34,19 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
         run: |
+          echo "repo=${GITHUB_REPOSITORY}"
+          echo "event_path=${GITHUB_EVENT_PATH}"
           python -m agent.main --log-path patchpilot_logs.jsonl
+
+      - name: Print PatchPilot logs (tail)
+        if: always()
+        run: |
+          echo "=== patchpilot_logs.jsonl (tail) ==="
+          if [ -f patchpilot_logs.jsonl ]; then
+            tail -n 200 patchpilot_logs.jsonl
+          else
+            echo "No patchpilot_logs.jsonl found"
+          fi
 
       - name: Upload logs
         if: always()
