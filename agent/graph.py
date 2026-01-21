@@ -42,7 +42,27 @@ def _extract_diff(model_text: str) -> str:
                 return obj["diff"].strip()
         except Exception:  # noqa: BLE001
             pass
+    # Try to extract a likely diff block if the model included extra text.
+    lines = text.splitlines()
+    # Prefer explicit diff headers when present.
+    start_idx = None
+    for i, line in enumerate(lines):
+        if line.startswith("diff --git ") or line.startswith("--- "):
+            start_idx = i
+            break
+    if start_idx is not None:
+        return "\n".join(lines[start_idx:]).strip()
     return text.strip()
+
+
+def _looks_like_unified_diff(diff_text: str) -> bool:
+    if not diff_text.strip():
+        return False
+    has_file_hdr = any(
+        line.startswith("diff --git ") for line in diff_text.splitlines()
+    ) or ("--- " in diff_text and "+++ " in diff_text)
+    has_hunk = "@@" in diff_text
+    return has_file_hdr and has_hunk
 
 
 def _shorten(s: str, n: int = 1200) -> str:
@@ -195,6 +215,9 @@ def build_graph(
         try:
             resp = llm.generate_text(prompt)
             s.diff_text = _extract_diff(resp.text)
+            if not _looks_like_unified_diff(s.diff_text or ""):
+                # Mark as retryable failure; repair_or_finish will loop.
+                s.failure_reason = "Model did not return a valid unified diff with file headers."
         except LLMError as e:
             s.failure_reason = f"LLM patch generation failed: {e}"
         return s.model_dump()
@@ -218,6 +241,7 @@ def build_graph(
             repo.git_reset_hard()
             repo.git_clean()
             s.failure_reason = f"Guardrail violation (diff): {e}"
+            logger.log("apply_patch", "Guardrail blocked diff", level="warn", reason=str(e))
             return s.model_dump()
         logger.log("apply_patch", "Applying diff with git apply")
         r = repo.git_apply(diff)
@@ -261,6 +285,29 @@ def build_graph(
     def repair_or_finish(state: dict[str, Any]) -> dict[str, Any]:
         s = AgentState(**state)
         if s.failure_reason:
+            # Some failures are retryable (bad diff / patch apply / guardrail diff parse).
+            retryable_prefixes = (
+                "Guardrail violation (diff):",
+                "Failed to apply patch:",
+                "LLM patch generation failed:",
+                "Model did not return a valid unified diff",
+            )
+            if s.attempt < s.max_attempts and any(
+                s.failure_reason.startswith(p) for p in retryable_prefixes
+            ):
+                logger.log(
+                    "repair_or_finish",
+                    "Retrying after patch-generation/apply failure",
+                    level="warn",
+                    attempt=s.attempt,
+                    failure_reason=s.failure_reason,
+                )
+                repo.git_reset_hard()
+                repo.git_clean()
+                s.failure_reason = None
+                s.checks_passed = False
+                s.attempt += 1
+                return s.model_dump()
             return s.model_dump()
         if s.checks_passed:
             return s.model_dump()
